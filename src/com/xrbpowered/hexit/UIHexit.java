@@ -29,6 +29,40 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	public Color colorMargin = new Color(0xeeeeee);
 	public Color colorMarginText = new Color(0xaaaaaa);
 
+	protected DragActor dragSelectActor = new DragActor() {
+		private float x, y;
+		@Override
+		public boolean notifyMouseDown(float x, float y, Button button, int mods) {
+			if(button==Button.left) {
+				// checkPushHistory(HistoryAction.unspecified);
+				this.x = baseToLocalX(x);
+				this.y = baseToLocalY(y);
+				cursorToMouse(this.x, this.y);
+				startSelection();
+				return true;
+			}
+			return false;
+		}
+
+		@Override
+		public boolean notifyMouseMove(float dx, float dy) {
+			x += dx * getPixelScale();
+			y += dy * getPixelScale();
+			cursorToMouse(this.x, this.y);
+			if(cursor<data.size())
+				cursor++;
+			scrollToCursor();
+			modifySelection(true);
+			repaint();
+			return true;
+		}
+
+		@Override
+		public boolean notifyMouseUp(float x, float y, Button button, int mods, UIElement target) {
+			return true;
+		}
+	};
+	
 	protected ByteBuffer data;
 	
 	public int numCols = 2;
@@ -163,7 +197,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 		final int lines = countLines();
 		final int curLine = cursorLine();
 		for(int lineIndex=displayLine; lineIndex<lines && y-lineHeight<maxy; lineIndex++) {
-			boolean drawCursor = lineIndex==curLine && focused;
+			boolean drawCursor = lineIndex==curLine && focused && !hasSelection();
 			Color bg = drawCursor ? colorHighlight : null;
 			drawLine(g, lineIndex, pos, y, bg, drawCursor);
 			y += lineHeight;
@@ -215,26 +249,37 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 		g.drawString(String.format("%08X", pos), xmargin-4/pixelScale, y, GraphAssist.RIGHT, GraphAssist.BOTTOM);
 
 		drawRemainder(g, xmargin, y, bg);
+		Color fg;
 
 		int x = xmargin;
 		int addr = pos;
 		int cx = 0;
-		cols:
 		for(int col=0; col<numCols; col++) {
 			for(int i=0; i<16; i++) {
+				int x0 = x;
 				x += (i%4==0) ? colMargin : byteMargin;
+				if(selMin!=null && addr-1>=selMin && addr<selMax)
+					drawBg(g, x0, x, y, colorSelection);
 				if(addr==cursor)
 					cx = x;
-				if(addr>=data.size()) {
-					break cols;
-				}
+				if(addr>=data.size())
+					break;
 				int b = data.get(addr);
-				Color color = colorText;
-				drawString(g, String.format("%02X", b), x, y, null, color);
+				bg = null;
+				fg = colorText;
+				if(selMin!=null && addr>=selMin && addr<selMax) {
+					bg = colorSelection;
+					fg = colorSelectedText;
+				}
+				drawString(g, String.format("%02X", b), x, y, bg, fg);
 				x += charWidth*2;
 				addr++;
 			}
+			if(selMin!=null && addr-1>=selMin && addr<selMax)
+				drawBg(g, x, x+colMargin, y, colorSelection);
 			x += colMargin;
+			if(addr>=data.size())
+				break;
 		}
 		if(drawCursor) {
 			if(hexMode) {
@@ -257,17 +302,21 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 			if(addr>=data.size())
 				break;
 			char ch = (char)data.get(addr);
-			Color color;
 			String s;
+			bg = null;
 			if(isPrintableChar(ch)) {
 				s = Character.toString(ch);
-				color = colorText;
+				fg = colorText;
 			}
 			else {
 				s = "\u00b7";
-				color = colorMarginText;
+				fg = colorMarginText;
 			}
-			x = drawString(g, s, x, y, null, color);
+			if(selMin!=null && addr>=selMin && addr<selMax) {
+				bg = colorSelection;
+				fg = colorSelectedText;
+			}
+			x = drawString(g, s, x, y, bg, fg);
 			addr++;
 		}
 		if(drawCursor) {
@@ -302,7 +351,11 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 		if(x<maxx)
 			g.fillRect(x, y-lineHeight+descent, maxx-x, lineHeight, bg==null ? colorBackground : bg);
 	}
-	
+
+	protected void drawBg(GraphAssist g, int x0, int x1, int y, Color bg) {
+		g.fillRect(x0, y-lineHeight+descent, x1-x0, lineHeight, bg==null ? colorBackground : bg);
+	}
+
 	protected int drawString(GraphAssist g, String s, int x, int y, Color bg, Color fg) {
 		int w = charWidth * s.length();
 		if(x<maxx && x+w>minx) {
@@ -375,7 +428,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	
 	public void selectAll() {
 		selStart = 0;
-		selEnd = data.size()-1;
+		selEnd = data.size();
 		cursor = selEnd;
 		updateSelRange();
 	}
@@ -432,6 +485,32 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 		}
 	}
 	
+	protected boolean deleteSelection(boolean pushHistory) {
+		if(selStart!=null) {
+			// if(pushHistory)
+			//	history.push();
+			
+			cursor = selMin;
+			if(insertMode)
+				data.modify(selMin, null, selMax);
+			else
+				data.fill(selMin, selMax-selMin, (byte)0);
+			deselect();
+			
+			if(pushHistory) {
+				// history.push();
+				// historyAction = HistoryAction.unspecified;
+			}
+			return true;
+		}
+		else
+			return false;
+	}
+	
+	public void deleteSelection() {
+		deleteSelection(true);
+	}
+	
 	protected boolean isCursorAtWordBoundary() {
 		if(cursor==0 || cursor==data.size())
 			return true;
@@ -462,7 +541,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					deselect();
 				}
 				do {
-					if(hexMode && !ctrl && hexCursorLow)
+					if(hexMode && !ctrl && !shift && hexCursorLow)
 						hexCursorLow = false;
 					else if(cursor>0) {
 						cursor--;
@@ -484,7 +563,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					deselect();
 				}
 				do {
-					if(hexMode && !ctrl && !hexCursorLow && cursor<data.size())
+					if(hexMode && !ctrl && !shift && !hexCursorLow && cursor<data.size())
 						hexCursorLow = true;
 					else if(cursor<data.size()) {
 						cursor++;
@@ -622,36 +701,23 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					}
 				}
 				break;
-				
+*/
 			case KeyEvent.VK_DELETE:
 				if(selStart!=null) {
 					deleteSelection();
 					scrollToCursor();
 				}
 				else {
-					checkPushHistory(HistoryAction.deleting);
-					if(cursor.col<lines.get(cursor.line).length) {
-						modify(cursor.line, cursor.col, "", cursor.col+1);
-					}
-					else if(cursor.line<lines.size()-1) {
-						joinLineWithNext();
+					// checkPushHistory(HistoryAction.deleting);
+					if(cursor<data.size()) {
+						if(insertMode)
+							data.modify(cursor, null, cursor+1);
+						else
+							data.modifyByte(cursor, (byte)0);
 					}
 				}
 				break;
-				
-			case KeyEvent.VK_ENTER:
-				if(!singleLine) {
-					deleteSelection();
-					checkPushHistory(HistoryAction.typing);
-					cursor.col = splitLineAtCursor();
-					cursor.line++;
-					scrollToCursor();
-				}
-				else {
-					getBase().resetFocus();
-				}
-				break;
-*/
+
 			case KeyEvent.VK_ESCAPE:
 				// checkPushHistory();
 				getBase().resetFocus();
@@ -672,11 +738,11 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 			default: {
 				if(modifiers==UIElement.modCtrlMask) {
 					switch(code) {
-						/*case KeyEvent.VK_A:
-							checkPushHistory();
+						case KeyEvent.VK_A:
+							// checkPushHistory();
 							selectAll();
 							break;
-						case KeyEvent.VK_X:
+						/*case KeyEvent.VK_X:
 							checkPushHistory();
 							cutSelection();
 							break;
@@ -704,7 +770,13 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					if(hexMode) {
 						int hex = charToHex(c);
 						if(hex>=0) {
-							// deleteSelection();
+							if(insertMode)
+								deleteSelection();
+							else {
+								if(selMin!=null)
+									cursor = selMin;
+								deselect();
+							}
 							// checkPushHistory(HistoryAction.typing);
 							if(insertMode && !hexCursorLow || cursor>=data.size())
 								data.modify(cursor, new byte[] {(byte)(hex<<4)}, cursor);
@@ -717,7 +789,13 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 						}
 					}
 					else if(isPrintableChar(c)) {
-						// deleteSelection();
+						if(insertMode)
+							deleteSelection();
+						else {
+							if(selMin!=null)
+								cursor = selMin;
+							deselect();
+						}
 						// checkPushHistory(HistoryAction.typing);
 						if(insertMode || cursor>=data.size())
 							data.modify(cursor, new byte[] {(byte)c}, cursor);
@@ -764,9 +842,9 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	
 	@Override
 	public DragActor acceptDrag(float x, float y, Button button, int mods) {
-		/*if(dragSelectActor.notifyMouseDown(x, y, button, mods))
+		if(dragSelectActor.notifyMouseDown(x, y, button, mods))
 			return dragSelectActor;
-		else*/
+		else
 			return null;
 	}
 	

@@ -77,7 +77,14 @@ public class ByteBuffer {
 			}
 		}
 	}
-	
+
+	public void fill(int addr, int len, byte b) {
+		for(int i=0; i<len; i++) {
+			buffer[addr] = b;
+			addr++;
+		}
+	}
+
 	public void modify(int addr, byte[] bytes) {
 		for(int i=0; i<bytes.length; i++) {
 			buffer[addr] = bytes[i];
@@ -87,11 +94,13 @@ public class ByteBuffer {
 	
 	public int modify(int before, byte[] add, int after) {
 		// text = text.substring(0, before) + add + text.substring(after);
-		int delta = before-after+add.length;
+		int addlen = add==null ? 0 : add.length;
+		int delta = before-after+addlen;
 		resizeBufferFor(length+delta);
 		if(delta!=0)
-			move(before+add.length, after, length-after);
-		modify(before, add);
+			move(before+addlen, after, length-after);
+		if(addlen>0)
+			modify(before, add);
 		length += delta;
 		return delta;
 	}
