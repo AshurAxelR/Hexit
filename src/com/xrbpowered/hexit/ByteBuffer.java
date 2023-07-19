@@ -40,7 +40,7 @@ public class ByteBuffer {
 	}
 	
 	protected void trimBuffer() {
-		if(length>buffer.length)
+		if(buffer.length>length)
 			resizeBuffer(length);
 	}
 	

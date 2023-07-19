@@ -1,6 +1,7 @@
 package com.xrbpowered.hexit;
 
 import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -45,10 +46,9 @@ public class Hexit {
 	}
 	
 	public static void saveBytes(byte[] bytes, OutputStream s) throws IOException {
-		// FIXME temporarily disabled
-		/*DataOutputStream out = new DataOutputStream(s);
+		DataOutputStream out = new DataOutputStream(s);
 		out.write(bytes);
-		out.close();*/
+		out.close();
 	}
 	
 	public static void saveByteBuffer(ByteBuffer buf, File file) {

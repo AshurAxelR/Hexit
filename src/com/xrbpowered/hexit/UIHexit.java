@@ -18,7 +18,7 @@ import com.xrbpowered.zoomui.std.text.UITextBox;
 
 public class UIHexit extends UIElement implements KeyInputHandler {
 
-	protected Font font = new Font("Consolas", Font.PLAIN, GraphAssist.ptToPixels(12f));
+	protected Font font = new Font("Consolas", Font.PLAIN, GraphAssist.ptToPixels(10f));
 	protected float fontSizeUnscaled = font.getSize();
 
 	public Color colorBackground = UITextBox.colorBackground;
@@ -165,11 +165,12 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	protected void updateMetrics(GraphAssist g, float fontSize) {
 		if(fm==null || fontSize!=this.fontSize) {
 			this.fontSize = fontSize;
+			font = font.deriveFont(fontSize);
 			fm = g.graph.getFontMetrics(font);
 		}
-		lineHeight = fm.getAscent()+fm.getDescent()-1+linePaddingTop+linePaddingBottom;
+		lineHeight = fm.getAscent()+fm.getDescent()-1+(int)(linePaddingTop/pixelScale+linePaddingBottom/pixelScale);
 		
-		descent = fm.getDescent()+linePaddingBottom;
+		descent = fm.getDescent()+(int)(linePaddingBottom/pixelScale);
 		charWidth = fm.stringWidth("W");
 		y0 = lineHeight*(1+displayLine)-descent;
 		g.graph.getClipBounds(clipBounds);
