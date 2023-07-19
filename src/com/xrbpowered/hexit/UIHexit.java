@@ -1,11 +1,13 @@
 package com.xrbpowered.hexit;
 
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Rectangle;
 import java.awt.event.KeyEvent;
 
+import com.xrbpowered.zoomui.DragActor;
 import com.xrbpowered.zoomui.GraphAssist;
 import com.xrbpowered.zoomui.KeyInputHandler;
 import com.xrbpowered.zoomui.UIContainer;
@@ -227,7 +229,8 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					break cols;
 				}
 				int b = data.get(addr);
-				drawString(g, String.format("%02X", b), x, y, null, colorText);
+				Color color = colorText;
+				drawString(g, String.format("%02X", b), x, y, null, color);
 				x += charWidth*2;
 				addr++;
 			}
@@ -254,10 +257,17 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 			if(addr>=data.size())
 				break;
 			char ch = (char)data.get(addr);
-			String s = ".";
-			if(isPrintableChar(ch))
+			Color color;
+			String s;
+			if(isPrintableChar(ch)) {
 				s = Character.toString(ch);
-			x = drawString(g, s, x, y, null, colorText);
+				color = colorText;
+			}
+			else {
+				s = "\u00b7";
+				color = colorMarginText;
+			}
+			x = drawString(g, s, x, y, null, color);
 			addr++;
 		}
 		if(drawCursor) {
@@ -311,6 +321,50 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	
 	protected int getLineWidth() {
 		return xmargin + numCols*getColWidth() + numCols*16*charWidth + colMargin*2;
+	}
+	
+	protected boolean modeForMouseX(float x) {
+		return x / pixelScale < xmargin + numCols*getColWidth();
+	}
+	
+	protected void cursorToMouse(float x, float y) {
+		int line = (int)(y / pixelScale / lineHeight);
+		if(line<0)
+			line = 0;
+		if(line>=countLines())
+			line = countLines()-1;
+
+		x /= pixelScale;
+		int cx;
+		if(hexMode) {
+			x -= xmargin;
+			final int colw = getColWidth();
+			int col = (int)(x / colw);
+			x -= col*colw;
+			final int quadw = colMargin + 3*byteMargin + charWidth*8;
+			int quad = (int)(x / quadw);
+			if(quad>3)
+				quad = 3;
+			x -= quad*quadw + colMargin;
+			final int bytew = charWidth*2+byteMargin;
+			cx = (int)(x / bytew);
+			x -= cx*bytew;
+			hexCursorLow = (x>charWidth);
+			cx += col*16 + quad*4;
+		}
+		else {
+			cx = (int)((x - xmargin - numCols*getColWidth() - colMargin) / charWidth);
+		}
+		if(cx<0)
+			cx = 0;
+		if(cx>=numCols*16)
+			cx = numCols*16-1;
+		
+		cursor = line*numCols*16 + cx;
+		if(cursor>data.size())
+			cursor = data.size();
+		if(cursor==data.size())
+			hexCursorLow = false;
 	}
 	
 	public void deselect() {
@@ -379,25 +433,28 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	}
 	
 	protected boolean isCursorAtWordBoundary() {
-		return true; // TODO word boundaries
-		/*checkCursorLineCache();
-		if(cursor.col==0 || cursor.col==cursorLine.length)
+		if(cursor==0 || cursor==data.size())
 			return true;
+		else if(hexMode) {
+			return cursor%4==0;
+		}
 		else {
-			char ch = cursorLineStart+cursor.col==0 ? ' ' : text.charAt(cursorLineStart+cursor.col-1);
-			char ch1 = text.charAt(cursorLineStart+cursor.col);
-			return Character.isWhitespace(ch) && !Character.isWhitespace(ch1) ||
-					(Character.isAlphabetic(ch) || Character.isDigit(ch))!=(Character.isAlphabetic(ch1) || Character.isDigit(ch1)) ||
-					Character.isLowerCase(ch) && Character.isUpperCase(ch1);
-		}*/
+			char ch = cursor==0 ? '\0' : (char)data.get(cursor-1);
+			char ch1 = (char)data.get(cursor);
+			return isPrintableChar(ch)!=isPrintableChar(ch1) ||
+					Character.isWhitespace(ch) && !Character.isWhitespace(ch1) ||
+					(Character.isAlphabetic(ch) || Character.isDigit(ch))!=(Character.isAlphabetic(ch1) || Character.isDigit(ch1));
+		}
 	}
 	
 	@Override
 	public boolean onKeyPressed(char c, int code, int modifiers) {
+		boolean shift = (modifiers&UIElement.modShiftMask)>0;
+		boolean ctrl = (modifiers&UIElement.modCtrlMask)>0;
 		switch(code) {
 			case KeyEvent.VK_LEFT:
 				// checkPushHistory();
-				if((modifiers&UIElement.modShiftMask)>0)
+				if(shift)
 					startSelection();
 				else {
 					if(selMin!=null)
@@ -405,21 +462,21 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					deselect();
 				}
 				do {
-					if(hexMode && hexCursorLow)
+					if(hexMode && !ctrl && hexCursorLow)
 						hexCursorLow = false;
 					else if(cursor>0) {
 						cursor--;
-						hexCursorLow = true;
+						hexCursorLow = !ctrl;
 					}
-				} while((modifiers&UIElement.modCtrlMask)>0 && !isCursorAtWordBoundary());
+				} while(ctrl && !isCursorAtWordBoundary());
 				scrollToCursor();
-				if((modifiers&UIElement.modShiftMask)>0)
+				if(shift)
 					modifySelection();
 				break;
 				
 			case KeyEvent.VK_RIGHT:
 				// checkPushHistory();
-				if((modifiers&UIElement.modShiftMask)>0)
+				if(shift)
 					startSelection();
 				else {
 					if(selMax!=null)
@@ -427,15 +484,15 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					deselect();
 				}
 				do {
-					if(hexMode && !hexCursorLow && cursor<data.size())
+					if(hexMode && !ctrl && !hexCursorLow && cursor<data.size())
 						hexCursorLow = true;
 					else if(cursor<data.size()) {
 						cursor++;
 						hexCursorLow = false;
 					}
-				} while((modifiers&UIElement.modCtrlMask)>0 && !isCursorAtWordBoundary());
+				} while(ctrl && !isCursorAtWordBoundary());
 				scrollToCursor();
-				if((modifiers&UIElement.modShiftMask)>0)
+				if(shift)
 					modifySelection();
 				break;
 				
@@ -647,6 +704,8 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 					if(hexMode) {
 						int hex = charToHex(c);
 						if(hex>=0) {
+							// deleteSelection();
+							// checkPushHistory(HistoryAction.typing);
 							if(insertMode && !hexCursorLow || cursor>=data.size())
 								data.modify(cursor, new byte[] {(byte)(hex<<4)}, cursor);
 							else
@@ -658,6 +717,8 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 						}
 					}
 					else if(isPrintableChar(c)) {
+						// deleteSelection();
+						// checkPushHistory(HistoryAction.typing);
 						if(insertMode || cursor>=data.size())
 							data.modify(cursor, new byte[] {(byte)c}, cursor);
 						else
@@ -665,18 +726,48 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 						cursor++;
 						scrollToCursor();
 					}
-					/*if(!Character.isISOControl(c) && c!=KeyEvent.CHAR_UNDEFINED) {
-						// deleteSelection();
-						// checkPushHistory(HistoryAction.typing);
-						modify(cursor.line, cursor.col, Character.toString(c), cursor.col);
-						cursor.col++;
-						scrollToCursor();
-					}*/
 				}
 			}
 		}
 		repaint();
 		return true;
+	}
+	
+	@Override
+	public void onMouseIn() {
+		getBase().getWindow().setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
+		super.onMouseIn();
+	}
+	
+	@Override
+	public void onMouseOut() {
+		getBase().getWindow().setCursor(Cursor.getDefaultCursor());
+		super.onMouseOut();
+	}
+	
+	@Override
+	public boolean onMouseDown(float x, float y, Button button, int mods) {
+		if(button==Button.left) {
+			if(!isFocused())
+				getBase().setFocus(this);
+			// else 
+			// 	checkPushHistory();
+			deselect();
+			hexMode = modeForMouseX(x);
+			cursorToMouse(x, y);
+			repaint();
+			return true;
+		}
+		else
+			return false;
+	}
+	
+	@Override
+	public DragActor acceptDrag(float x, float y, Button button, int mods) {
+		/*if(dragSelectActor.notifyMouseDown(x, y, button, mods))
+			return dragSelectActor;
+		else*/
+			return null;
 	}
 	
 	@Override
