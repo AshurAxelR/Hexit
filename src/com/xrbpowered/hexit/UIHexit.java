@@ -9,7 +9,9 @@ import java.awt.event.KeyEvent;
 
 import com.xrbpowered.zoomui.DragActor;
 import com.xrbpowered.zoomui.GraphAssist;
+import com.xrbpowered.zoomui.InputInfo;
 import com.xrbpowered.zoomui.KeyInputHandler;
+import com.xrbpowered.zoomui.MouseInfo;
 import com.xrbpowered.zoomui.UIContainer;
 import com.xrbpowered.zoomui.UIElement;
 import com.xrbpowered.zoomui.base.UIPanView;
@@ -31,34 +33,30 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 
 	protected DragActor dragSelectActor = new DragActor() {
 		private float x, y;
+		
 		@Override
-		public boolean notifyMouseDown(float x, float y, Button button, int mods) {
-			if(button==Button.left) {
+		public boolean startDrag(float x, float y, MouseInfo mouse) {
+			if(mouse.eventButton==MouseInfo.LEFT) {
 				// checkPushHistory(HistoryAction.unspecified);
-				this.x = baseToLocalX(x);
-				this.y = baseToLocalY(y);
+				this.x = x; // rootToLocalX(x);
+				this.y = y; // rootToLocalY(y);
 				cursorToMouse(this.x, this.y);
 				startSelection();
 				return true;
 			}
 			return false;
 		}
-
+		
 		@Override
-		public boolean notifyMouseMove(float dx, float dy) {
-			x += dx * getPixelScale();
-			y += dy * getPixelScale();
+		public boolean onMouseDrag(float rx, float ry, float drx, float dry, MouseInfo mouse) {
+			x = rootToLocalX(rx);
+			y = rootToLocalY(ry);
 			cursorToMouse(this.x, this.y);
 			if(cursor<data.size())
 				cursor++;
 			scrollToCursor();
 			modifySelection(true);
 			repaint();
-			return true;
-		}
-
-		@Override
-		public boolean notifyMouseUp(float x, float y, Button button, int mods, UIElement target) {
 			return true;
 		}
 	};
@@ -96,9 +94,13 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	
 	public UIHexit(UIContainer parent) {
 		super(parent);
-		repaintOnHover = true;
 		data = new ByteBuffer();
-		getBase().tabIndex().setStickyFocus(this);
+		getRoot().tabIndex.setStickyFocus(this);
+	}
+	
+	@Override
+	public boolean repaintOnHover() {
+		return true;
 	}
 
 	public void updateSize() {
@@ -528,9 +530,10 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	}
 	
 	@Override
-	public boolean onKeyPressed(char c, int code, int modifiers) {
-		boolean shift = (modifiers&UIElement.modShiftMask)>0;
-		boolean ctrl = (modifiers&UIElement.modCtrlMask)>0;
+	public boolean onKeyPressed(char c, int code, InputInfo input) {
+		boolean shift = input.isShiftDown();
+		boolean ctrl = input.isCtrlDown();
+		int modifiers = input.mods;
 		switch(code) {
 			case KeyEvent.VK_LEFT:
 				// checkPushHistory();
@@ -578,11 +581,11 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 				
 			case KeyEvent.VK_UP:
 				// checkPushHistory();
-				if(modifiers==UIElement.modCtrlMask) {
+				if(modifiers==InputInfo.CTRL) {
 					panView().pan(0, lineHeight);
 				}
 				else {
-					if(modifiers==UIElement.modShiftMask)
+					if(modifiers==InputInfo.SHIFT)
 						startSelection();
 					else
 						deselect();
@@ -590,18 +593,18 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 						cursor -= numCols*16;
 					}
 					scrollToCursor();
-					if(modifiers==UIElement.modShiftMask)
+					if(modifiers==InputInfo.SHIFT)
 						modifySelection();
 				}
 				break;
 				
 			case KeyEvent.VK_DOWN:
 				// checkPushHistory();
-				if(modifiers==UIElement.modCtrlMask) {
+				if(modifiers==InputInfo.CTRL) {
 					panView().pan(0, -lineHeight);
 				}
 				else {
-					if(modifiers==UIElement.modShiftMask)
+					if(modifiers==InputInfo.SHIFT)
 						startSelection();
 					else
 						deselect();
@@ -613,7 +616,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 							hexCursorLow = false;
 					}
 					scrollToCursor();
-					if(modifiers==UIElement.modShiftMask)
+					if(modifiers==InputInfo.SHIFT)
 						modifySelection();
 				}
 				break;
@@ -721,7 +724,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 
 			case KeyEvent.VK_ESCAPE:
 				// checkPushHistory();
-				getBase().resetFocus();
+				getRoot().resetFocus();
 				break;
 				
 			case KeyEvent.VK_INSERT:
@@ -737,7 +740,7 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 				break;
 				
 			default: {
-				if(modifiers==UIElement.modCtrlMask) {
+				if(modifiers==InputInfo.CTRL) {
 					switch(code) {
 						case KeyEvent.VK_A:
 							// checkPushHistory();
@@ -814,21 +817,21 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	
 	@Override
 	public void onMouseIn() {
-		getBase().getWindow().setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
+		getRoot().getWindow().setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
 		super.onMouseIn();
 	}
 	
 	@Override
 	public void onMouseOut() {
-		getBase().getWindow().setCursor(Cursor.getDefaultCursor());
+		getRoot().getWindow().setCursor(Cursor.getDefaultCursor());
 		super.onMouseOut();
 	}
 	
 	@Override
-	public boolean onMouseDown(float x, float y, Button button, int mods) {
-		if(button==Button.left) {
+	public boolean onMouseDown(float x, float y, MouseInfo mouse) {
+		if(mouse.eventButton==MouseInfo.LEFT) {
 			if(!isFocused())
-				getBase().setFocus(this);
+				getRoot().setFocus(this);
 			// else 
 			// 	checkPushHistory();
 			deselect();
@@ -842,8 +845,8 @@ public class UIHexit extends UIElement implements KeyInputHandler {
 	}
 	
 	@Override
-	public DragActor acceptDrag(float x, float y, Button button, int mods) {
-		if(dragSelectActor.notifyMouseDown(x, y, button, mods))
+	public DragActor acceptDrag(float x, float y, MouseInfo mouse) {
+		if(dragSelectActor.startDrag(x, y, mouse))
 			return dragSelectActor;
 		else
 			return null;

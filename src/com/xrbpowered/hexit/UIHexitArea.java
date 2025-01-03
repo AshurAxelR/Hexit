@@ -16,7 +16,7 @@ public class UIHexitArea extends UIScrollContainer {
 	}
 	
 	@Override
-	protected void paintSelf(GraphAssist g) {
+	protected void paintBackground(GraphAssist g) {
 		g.fill(this, Color.WHITE);
 	}
 	
@@ -28,7 +28,7 @@ public class UIHexitArea extends UIScrollContainer {
 	
 	@Override
 	protected float layoutView() {
-		editor.setLocation(0, 0);
+		editor.setPosition(0, 0);
 		editor.updateSize();
 		return editor.getHeight();
 	}
